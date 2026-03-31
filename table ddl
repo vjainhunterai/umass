@@ -1,3 +1,43 @@
+CREATE TABLE FTI_UMass_Supplier_Invoice_Derived AS
+SELECT 
+    t.*,
+
+    CASE 
+        -- Invoice has positive lines
+        WHEN IFNULL(pos_total.pos_sum, 0) > 0 THEN 
+            CASE 
+                WHEN t.`Invoice Line Amount` >= 0 THEN pos_total.pos_sum
+                ELSE -1 * pos_total.pos_sum
+            END
+        -- Invoice has only negative lines: total is negative
+        ELSE -1 * IFNULL(neg_total.neg_sum, 0)
+    END AS `Invoice Total Amount`,
+
+    ABS(t.`Invoice Line Amount`) AS `Derived Invoice Line Amount`
+
+FROM `FTI_UMass_Supplier_Invoice_Journal_Line_Details` t
+
+LEFT JOIN (
+    SELECT `Supplier Invoice Document`,
+           SUM(`Invoice Line Amount`) AS pos_sum
+    FROM `FTI_UMass_Supplier_Invoice_Journal_Line_Details`
+    WHERE `Invoice Line Amount` > 0
+    GROUP BY `Supplier Invoice Document`
+) pos_total ON t.`Supplier Invoice Document` = pos_total.`Supplier Invoice Document`
+
+LEFT JOIN (
+    SELECT `Supplier Invoice Document`,
+           SUM(ABS(`Invoice Line Amount`)) AS neg_sum
+    FROM `FTI_UMass_Supplier_Invoice_Journal_Line_Details`
+    WHERE `Invoice Line Amount` < 0
+    GROUP BY `Supplier Invoice Document`
+) neg_total ON t.`Supplier Invoice Document` = neg_total.`Supplier Invoice Document`;
+
+
+
+
+====================
+
 CREATE TABLE `FTI_UMass_Supplier_Invoice_Journal_Line_Details` (
   `Company` text,
   `Supplier Invoice Document` text,
