@@ -1,0 +1,63 @@
+-- ============================================================
+-- Option A: Simple Sum of All Lines (Client Guidance)
+-- ============================================================
+
+CREATE TABLE FTI_UMass_Supplier_Invoice_Derived AS
+SELECT 
+    t.*,
+
+    -- Derived Column 1: Invoice Total Amount (sum of all lines)
+    SUM(t.`Invoice Line Amount`) 
+        OVER (PARTITION BY t.`Supplier Invoice Document`) AS `Invoice Total Amount`,
+
+    -- Derived Column 2: Derived Invoice Line Amount (absolute value)
+    ABS(t.`Invoice Line Amount`) AS `Derived Invoice Line Amount`
+
+FROM `FTI_UMass_Supplier_Invoice_Journal_Line_Details` t;
+
+
+-- ============================================================
+-- Validation: Reproduce the summary view from the image
+-- ============================================================
+
+SELECT 
+    CASE 
+        WHEN pos_flag = 1 AND neg_flag = 0 THEN '+'
+        WHEN pos_flag = 0 AND neg_flag = 1 THEN '-'
+        ELSE 'mix'
+    END AS `Invoice Sign`,
+    COUNT(DISTINCT d.`Supplier Invoice Document`) AS `# Supplier Invoice Document`,
+    COUNT(*) AS `Records`,
+    COUNT(DISTINCT d.`Line Description`) AS `# Line Description`,
+    ROUND(SUM(d.`Invoice Line Amount`), 2) AS `Sum of Invoice Line Amount`,
+    ROUND(SUM(ABS(d.`Invoice Line Amount`)), 2) AS `Sum of ABS Invoice Line Amount`,
+    COUNT(DISTINCT d.`Supplier Invoice Line Distribution`) AS `Count of Supplier Invoice Line Distribution`
+FROM FTI_UMass_Supplier_Invoice_Derived d
+INNER JOIN (
+    SELECT 
+        `Supplier Invoice Document`,
+        MAX(CASE WHEN `Invoice Line Amount` > 0 THEN 1 ELSE 0 END) AS pos_flag,
+        MAX(CASE WHEN `Invoice Line Amount` < 0 THEN 1 ELSE 0 END) AS neg_flag
+    FROM FTI_UMass_Supplier_Invoice_Derived
+    GROUP BY `Supplier Invoice Document`
+) inv_sign ON d.`Supplier Invoice Document` = inv_sign.`Supplier Invoice Document`
+GROUP BY 
+    CASE 
+        WHEN pos_flag = 1 AND neg_flag = 0 THEN '+'
+        WHEN pos_flag = 0 AND neg_flag = 1 THEN '-'
+        ELSE 'mix'
+    END
+
+UNION ALL
+
+SELECT 
+    'Total',
+    COUNT(DISTINCT `Supplier Invoice Document`),
+    COUNT(*),
+    COUNT(DISTINCT `Line Description`),
+    ROUND(SUM(`Invoice Line Amount`), 2),
+    ROUND(SUM(ABS(`Invoice Line Amount`)), 2),
+    COUNT(DISTINCT `Supplier Invoice Line Distribution`)
+FROM FTI_UMass_Supplier_Invoice_Derived
+
+ORDER BY FIELD(`Invoice Sign`, '+', '-', 'mix', 'Total');
