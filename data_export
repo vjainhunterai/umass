@@ -1,0 +1,66 @@
+"""
+MySQL RDS → TXT Exporter (Lightweight)
+Chunked reads, streams directly to file — minimal memory usage.
+"""
+
+from sqlalchemy import create_engine, text
+import pandas as pd
+
+# ============================================================
+# CONFIGURATION — Edit these values
+# ============================================================
+
+DB_HOST = "your-rds-instance.xxxxxxx.us-east-1.rds.amazonaws.com"
+DB_PORT = 3306
+DB_NAME = "your_database"
+DB_USER = "admin"
+DB_PASS = "your_password"
+SSL_CA = None  # e.g. "/path/to/rds-combined-ca-bundle.pem"
+
+OUTPUT_FILE = "export_output.txt"
+DELIMITER = "\t"  # tab-delimited; change to "|" or "," if needed
+CHUNK_SIZE = 50000  # rows per chunk — tune based on your RAM
+
+# ============================================================
+# SQL STATEMENT — Put your query here
+# ============================================================
+
+SQL = """
+SELECT *
+FROM your_table
+WHERE 1=1
+LIMIT 1000
+"""
+
+# ============================================================
+# EXPORT LOGIC
+# ============================================================
+
+def main():
+    url = f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    connect_args = {}
+    if SSL_CA:
+        connect_args["ssl"] = {"ca": SSL_CA}
+
+    engine = create_engine(url, connect_args=connect_args)
+
+    print(f"Connecting to {DB_HOST}:{DB_PORT}/{DB_NAME} ...")
+
+    # --- Stream chunks directly to txt file (no full df in memory) ---
+    row_count = 0
+    with engine.connect() as conn:
+        print("Executing query ...")
+        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+            first_chunk = True
+            for chunk in pd.read_sql(text(SQL), conn, chunksize=CHUNK_SIZE):
+                chunk.to_csv(f, sep=DELIMITER, index=False, header=first_chunk)
+                first_chunk = False
+                row_count += len(chunk)
+                print(f"  Written {row_count} rows ...")
+
+    print(f"Total: {row_count} rows")
+    print(f"Exported to: {OUTPUT_FILE}")
+
+
+if __name__ == "__main__":
+    main()
