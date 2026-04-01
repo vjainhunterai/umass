@@ -1,3 +1,35 @@
+CREATE TABLE FTI_UMass_Supplier_Invoice_Derived AS
+SELECT 
+    t.*,
+
+    -- Derived Column 1: Invoice Total Amount (sum of all lines)
+    SUM(t.`Invoice Line Amount`) 
+        OVER (PARTITION BY t.`Supplier Invoice Document`) AS `Invoice Total Amount`,
+
+    -- Derived Column 2: Derived Invoice Line Amount (absolute value)
+    ABS(t.`Invoice Line Amount`) AS `Derived Invoice Line Amount`,
+
+    -- Derived Column 3: Invoice Sign
+    CASE 
+        WHEN MAX(CASE WHEN t.`Invoice Line Amount` > 0 THEN 1 ELSE 0 END) 
+             OVER (PARTITION BY t.`Supplier Invoice Document`) = 1
+         AND MAX(CASE WHEN t.`Invoice Line Amount` < 0 THEN 1 ELSE 0 END) 
+             OVER (PARTITION BY t.`Supplier Invoice Document`) = 0
+        THEN '+'
+        WHEN MAX(CASE WHEN t.`Invoice Line Amount` > 0 THEN 1 ELSE 0 END) 
+             OVER (PARTITION BY t.`Supplier Invoice Document`) = 0
+         AND MAX(CASE WHEN t.`Invoice Line Amount` < 0 THEN 1 ELSE 0 END) 
+             OVER (PARTITION BY t.`Supplier Invoice Document`) = 1
+        THEN '-'
+        ELSE 'mix'
+    END AS `Invoice Sign`
+
+FROM `FTI_UMass_Supplier_Invoice_Journal_Line_Details` t;
+
+
+
+
+
 -- ============================================================
 -- Option A: Simple Sum of All Lines (Client Guidance)
 -- ============================================================
