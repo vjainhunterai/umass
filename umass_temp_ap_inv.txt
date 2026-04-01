@@ -1,4 +1,179 @@
+INSERT INTO l1_t0004_db.`temp_ap_inv`
+(
+    `hash_key`,
+    `SUPPLIER_INVOICE`,
+    `INVOICE_NUMBER`,
+    `COMPANY`,
+    `INVOICE_STATUS`,
+    `INTERCOMPANY`,
+    `DIRECT_INTERCOMPANY`,
+    `SUPPLIER`,
+    `SUPPLIER_ID`,
+    `DEFAULT_PAYMENT_TERMS`,
+    `DEFAULT_PAYMENT_TYPE`,
+    `SUPPLIERS_INVOICE_NUMBER`,
+    `CREATED_ON`,
+    `INVOICE_DATE`,
+    `INVOICE_RECEIVED_DATE`,
+    `INVOICE_ACCOUNTING_DATE`,
+    `MEMO`,
+    `DISCOUNT_DATE`,
+    `DUE_DATE`,
+    `INVOICE_AMOUNT`,
+    `INVOICE_STATUS1`,
+    `BALANCE_DUE`,
+    `CURRENCY`,
+    `IS_ON_HOLD_BLANK_IF_NO_AND_YES_IF_YES`,
+    `ADJUSTMENT`,
+    `ADJUSTMENT_REASON`,
+    `PROCUREMENT_RELATED`,
+    `PURCHASE_ORDERS`,
+    `EXTERNAL_PO_NUMBER`,
+    `INVOICE_CREATED_BY`,
+    `PAYMENT_AMOUNT`,
+    `PAYMENT_HANDLING_INSTRUCTION`,
+    `SUPPLIER_INVOICE_REFERENCE_ID`,
+    `CHECK_NUMBER`,
+    `COST_CENTER`,
+    `LOCATION`,
+    `SITE`,
+    `LINE_DESCRIPTION`,
+    `APPROVAL_DATE`,
+    `PAYMENT_TYPE`,
+    `SETTLEMENT_RUN_NUMBER`,
+    `IS_ON_HOLD`,
+    `SUPPLIER_DOCUMENT_RECEIVED`,
+    `QUANTITY`,
+    `UNIT_OF_MEASURE`,
+    `UNIT_COST`,
+    `EXTENDED_AMOUNT`,
+    `DOCUMENT_LINK`,
+    `PAYMENT_DATE`,
+    `DOCUMENT_PAYMENT_STATUS`,
+    `PAYMENT_STATUS`,
+    `PROJECT`,
+    `GRANT`,
+    `GIFT`,
+    `LINE_COMPANY`,
+    `PAYEE_ALTERNATE_NAMES`,
+    `EXTERNAL_SYSTEM_ID_REFERENCE`,
+    `load_user`,
+    `load_date`,
+    `file_name`,
+    `user_name`,
+    `execution_id`
+)
+SELECT 
+    SHA2(
+        CONCAT_WS('|',
+            COALESCE(`Supplier Invoice Document`, ''),
+            COALESCE(`Company`, ''),
+            COALESCE(`Invoice Status`, ''),
+            COALESCE(`Supplier`, ''),
+            COALESCE(`Supplier ID`, ''),
+            COALESCE(CAST(`Invoice Date` AS CHAR), ''),
+            COALESCE(CAST(`Invoice Created Date` AS CHAR), ''),
+            COALESCE(`Purchase Orders`, ''),
+            COALESCE(`Purchase Order Line`, ''),
+            COALESCE(`Item`, ''),
+            COALESCE(`Unit of Measure`, ''),
+            COALESCE(CAST(`Distribution Quantity` AS CHAR), ''),
+            COALESCE(`Line Description`, ''),
+            COALESCE(CAST(`Unit Cost` AS CHAR), ''),
+            COALESCE(`Ledger Account`, ''),
+            COALESCE(`Spend Category`, ''),
+            COALESCE(`Cost Center`, ''),
+            COALESCE(`Cost Center ID`, ''),
+            COALESCE(`Payment Status`, ''),
+            COALESCE(CAST(`Payment Date` AS CHAR), ''),
+            COALESCE(`FY25?`, ''),
+            COALESCE(CAST(`Check Number` AS CHAR), ''),
+            COALESCE(CAST(`Freight Amount` AS CHAR), ''),
+            COALESCE(CAST(`Other Charges` AS CHAR), ''),
+            COALESCE(`Supplier Invoice Line Distribution`, ''),
+            COALESCE(CAST(`Invoice Line Amount` AS CHAR), ''),
+            COALESCE(CAST(`Invoice Total Amount` AS CHAR), ''),
+            COALESCE(CAST(`Derived Invoice Line Amount` AS CHAR), '')
+        ), 256
+    ) AS `hash_key`,
+    `Supplier Invoice Document`,                          -- SUPPLIER_INVOICE
+    NULL,                                                  -- INVOICE_NUMBER (not in source)
+    `Company`,                                             -- COMPANY
+    `Invoice Status`,                                      -- INVOICE_STATUS
+    NULL,                                                  -- INTERCOMPANY
+    NULL,                                                  -- DIRECT_INTERCOMPANY
+    `Supplier`,                                            -- SUPPLIER
+    `Supplier ID`,                                         -- SUPPLIER_ID
+    NULL,                                                  -- DEFAULT_PAYMENT_TERMS
+    NULL,                                                  -- DEFAULT_PAYMENT_TYPE
+    NULL,                                                  -- SUPPLIERS_INVOICE_NUMBER
+    CASE
+        WHEN LENGTH(SUBSTRING_INDEX(`Invoice Created Date`, '/', -1)) = 4
+            THEN STR_TO_DATE(`Invoice Created Date`, '%m/%d/%Y')
+        ELSE STR_TO_DATE(`Invoice Created Date`, '%m/%d/%y')
+    END,                                                   -- CREATED_ON
+    CASE
+        WHEN LENGTH(SUBSTRING_INDEX(`Invoice Date`, '/', -1)) = 4
+            THEN STR_TO_DATE(`Invoice Date`, '%m/%d/%Y')
+        ELSE STR_TO_DATE(`Invoice Date`, '%m/%d/%y')
+    END,                                                   -- INVOICE_DATE
+    NULL,                                                  -- INVOICE_RECEIVED_DATE
+    NULL,                                                  -- INVOICE_ACCOUNTING_DATE
+    NULL,                                                  -- MEMO
+    NULL,                                                  -- DISCOUNT_DATE
+    NULL,                                                  -- DUE_DATE
+    `Invoice Total Amount`,                                -- INVOICE_AMOUNT (derived total)
+    NULL,                                                  -- INVOICE_STATUS1
+    NULL,                                                  -- BALANCE_DUE
+    NULL,                                                  -- CURRENCY
+    NULL,                                                  -- IS_ON_HOLD_BLANK_IF_NO_AND_YES_IF_YES
+    NULL,                                                  -- ADJUSTMENT
+    NULL,                                                  -- ADJUSTMENT_REASON
+    NULL,                                                  -- PROCUREMENT_RELATED
+    `Purchase Orders`,                                     -- PURCHASE_ORDERS
+    NULL,                                                  -- EXTERNAL_PO_NUMBER
+    NULL,                                                  -- INVOICE_CREATED_BY
+    NULL,                                                  -- PAYMENT_AMOUNT
+    NULL,                                                  -- PAYMENT_HANDLING_INSTRUCTION
+    NULL,                                                  -- SUPPLIER_INVOICE_REFERENCE_ID
+    `Check Number`,                                        -- CHECK_NUMBER
+    `Cost Center`,                                         -- COST_CENTER
+    NULL,                                                  -- LOCATION
+    NULL,                                                  -- SITE
+    `Line Description`,                                    -- LINE_DESCRIPTION
+    NULL,                                                  -- APPROVAL_DATE
+    NULL,                                                  -- PAYMENT_TYPE
+    NULL,                                                  -- SETTLEMENT_RUN_NUMBER
+    NULL,                                                  -- IS_ON_HOLD
+    NULL,                                                  -- SUPPLIER_DOCUMENT_RECEIVED
+    `Distribution Quantity`,                               -- QUANTITY
+    `Unit of Measure`,                                     -- UNIT_OF_MEASURE
+    `Unit Cost`,                                           -- UNIT_COST
+    `Derived Invoice Line Amount`,                         -- EXTENDED_AMOUNT (derived line amount)
+    NULL,                                                  -- DOCUMENT_LINK
+    `Payment Date`,                                        -- PAYMENT_DATE
+    NULL,                                                  -- DOCUMENT_PAYMENT_STATUS
+    `Payment Status`,                                      -- PAYMENT_STATUS
+    NULL,                                                  -- PROJECT
+    NULL,                                                  -- GRANT
+    NULL,                                                  -- GIFT
+    NULL,                                                  -- LINE_COMPANY
+    NULL,                                                  -- PAYEE_ALTERNATE_NAMES
+    NULL,                                                  -- EXTERNAL_SYSTEM_ID_REFERENCE
+    'admin',                                               -- load_user
+    CURRENT_DATE,                                          -- load_date
+    'FTI_UMass_Supplier_Invoice_v1',                       -- file_name
+    'admin',                                               -- user_name
+    '20250521123456'                                       -- execution_id
+FROM umass.`FTI_UMass_Supplier_Invoice_v1`;
 
+
+
+
+
+
+
+=======================
 INSERT INTO l1_t0004_db.`temp_ap_inv`
 (
     `hash_key`,
