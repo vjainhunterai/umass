@@ -237,6 +237,7 @@ def ML1():
         df['Local_Group'] = df.groupby(group_key)['New_Flag'].cumsum()
         df['Group_ID'] = (df[group_key].astype('category').cat.codes * 10 ** 6 + df['Local_Group'])
         return df
+    """    
     def assign_matching_indices_new(df, ndays, group_key='Group_ID'):
         df = df.sort_values([group_key, 'Inv_Date']).copy()
         df['Inv_Ordinal'] = df['Inv_Date'].map(lambda x: x.toordinal())
@@ -249,6 +250,43 @@ def ML1():
         df = df.rename(columns={'Index_row_right': 'matching_index'})
         df['matching_index'] = df['matching_index'].apply(lambda x: x if isinstance(x, list) else [])
         return df.drop(columns=['Inv_Ordinal'])
+
+      """
+      def assign_matching_indices_new(df, ndays, group_key='Group_ID'):
+    df = df.sort_values([group_key, 'Inv_Date']).copy()
+    
+    matching_indices = [[] for _ in range(len(df))]
+    idx_positions = {row['Index_row']: i for i, (_, row) in enumerate(df.iterrows())}
+    
+    for group_name, group in df.groupby(group_key):
+        if len(group) < 2:
+            continue
+        
+        group_sorted = group.sort_values('Inv_Date')
+        inv_dates = group_sorted['Inv_Date'].values
+        index_rows = group_sorted['Index_row'].values
+        positions = [idx_positions[ir] for ir in index_rows]
+        
+        n = len(group_sorted)
+        for i in range(n):
+            matches = []
+            # Look forward
+            for j in range(i + 1, n):
+                diff = abs((inv_dates[j] - inv_dates[i]) / np.timedelta64(1, 'D'))
+                if diff > ndays:
+                    break
+                matches.append(index_rows[j])
+            # Look backward
+            for j in range(i - 1, -1, -1):
+                diff = abs((inv_dates[i] - inv_dates[j]) / np.timedelta64(1, 'D'))
+                if diff > ndays:
+                    break
+                matches.append(index_rows[j])
+            
+            matching_indices[positions[i]] = matches
+    
+    df['matching_index'] = matching_indices
+    return df
 
 
 
