@@ -79,7 +79,7 @@ def ML1():
         df = pd.read_csv(encryptedFile)
 
         # Decrypt the data
-        df_decrypted = df.applymap(lambda x: decryptData(str(x), keyPath))
+        df_decrypted = df.map (lambda x: decryptData(str(x), keyPath))
         df = pd.DataFrame(df_decrypted)
 
         # Extract configuration
