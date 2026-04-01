@@ -1,0 +1,802 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[51]:
+
+
+# In[22]:
+
+
+import pandas as pd
+import os
+import numpy as np
+from datetime import datetime
+from itertools import count
+from tqdm import tqdm
+import Levenshtein
+import re
+import ast
+import networkx as nx
+from sqlalchemy import create_engine, text
+import urllib
+import sys
+tqdm.pandas()
+a=pd.DataFrame()
+from itertools import combinations
+import gc
+import openpyxl
+
+
+# In[20]:
+
+
+def ML1():
+    import pandas as pd
+    from cryptography.fernet import Fernet
+    import os
+    import sys
+    try:
+        env_local= os.getenv("ENV", "prod")
+    except Exception as e:
+        print(f"{e}")
+    #from airflow.models import Variable
+    #try:
+        #env_local = Variable.get("ENV", default_var = "prod")
+    #except Exception as e:
+        #print(f"{e}")
+    def readEncryptedConfig(excelFilePath,env):
+        """
+        Reads the encrypted configuration from the Excel file.
+
+        Args:
+            excel_file_path (str): The path to the Excel file.
+
+        Returns:
+            dict: A dictionary containing the decrypted configuration.
+        """
+        def decryptData(data, keyDirectory):
+
+            scKey = open(keyDirectory, 'rb').read()
+            cipherSuite = Fernet(scKey)
+            if isinstance(data, str):
+                return cipherSuite.decrypt(data.encode()).decode()
+            else:
+                return data
+        # Read paths from Excel file
+        pathsDf1 = pd.read_excel(excelFilePath)
+        pathsDf = pathsDf1[pathsDf1['Env'] == env]
+        pathsDict = pathsDf.set_index('Key_name')['Path'].to_dict()
+
+        # Read the encryption key
+        keyPath = pathsDict['key_path']
+        encryptedFile = pathsDict['encrypted_file']
+
+        # Read the encryption key
+        scKey = open(keyPath, 'rb').read()
+        cipherSuite = Fernet(scKey)
+
+        # Read the encrypted file
+        df = pd.read_csv(encryptedFile)
+
+        # Decrypt the data
+        df_decrypted = df.applymap(lambda x: decryptData(str(x), keyPath))
+        df = pd.DataFrame(df_decrypted)
+
+        # Extract configuration
+        config = {
+             'host': str(df.at[0, 'host']),
+             'database': str(df.at[0, 'database']),
+             'user': str(df.at[0, 'user']),
+             'password': str(df.at[0, 'password']),
+             'port': 3306
+         }
+
+        return config
+    def getDataFromDatabase_temorary(table_name):
+        a = readEncryptedConfig(r'/home/ubuntu/anomaly_data_pipeline/Data_Engg_Data_Science_Pre_Prod/Anomaly/Config/Paths.xls', env_local)
+        user = a['user']
+        pwd = a['password']
+        password = urllib.parse.quote_plus(pwd)
+        ip = a['host']
+        schema = "anomaly"
+        engine = create_engine('mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(user, password, ip, schema))
+        query = f"SELECT * FROM anomaly.{table_name}"
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+        return df
+    def uploadOutput_temorary(output, table_name):
+        a = readEncryptedConfig(r'/home/ubuntu/anomaly_data_pipeline/Data_Engg_Data_Science_Pre_Prod/Anomaly/Config/Paths.xls', env_local)
+        user = a['user']
+        pwd = a['password']
+        password = urllib.parse.quote_plus(pwd)
+        ip = a['host']
+        schema = "anomaly"
+        engine = create_engine('mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(user, password, ip, schema))
+        output.to_sql(table_name, con = engine, if_exists='replace', index=False)
+
+
+
+    def extract_digits(text):
+        if pd.isna(text):
+            return ''
+        text = str(text)
+        match = re.search(r'\d.*\d', text)
+        return match.group(0) if match else ''
+
+
+    def clean_price(value):
+        value = value.replace(' ','')
+        value = re.sub(r'(\d),(?=\d{3}(\D|$))', r'\1', value)
+        value = re.sub(r'(\d)\.(?=\d{3}(\D|$))', r'\1', value)
+        value = re.sub(r'(\d),(?=\d{1,2}(\D|$))', r'\1.', value)
+        value = value.replace(',','')
+        value = value.replace('$','')
+        parts = value.split('.')
+        if len(parts) > 2:
+            value = parts[0] + ''.join(parts[1:-1]) + '.' + parts[-1]
+        try:
+            cleaned_value = float(value)
+        except ValueError:
+            cleaned_value = value
+        return cleaned_value
+
+    def process_date_and_assign_group(group, ndays):
+        global group_id_counter
+        group = group.sort_values('Inv_Date')
+        group['Date_Diff'] = group['Inv_Date'].diff().dt.days.fillna(0).abs()
+        group['New_Group'] = (group['Date_Diff'] > ndays).cumsum() + group_id_counter
+        group['Group_ID'] = group['New_Group']
+        group_id_counter += group['Group_ID'].nunique()
+        return group
+
+    def filter_by_numeric_difference(group):
+        group['matching_index'] = group['matching_index'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+
+        for idx, row in group.iterrows():
+            current_index = row['Index_row']
+            current_number = int(row['Suppliers_Invoice_Number'])
+
+            matching_indices = row['matching_index']
+            filtered_indices = [
+                match_idx
+                for match_idx in matching_indices
+                if abs(current_number - int(group.loc[group['Index_row'] == match_idx, 'Suppliers_Invoice_Number'].iloc[0])) == 0 \
+       or abs(current_number - int(group.loc[group['Index_row'] == match_idx, 'Suppliers_Invoice_Number'].iloc[0])) > 5
+            ]
+
+            group.at[idx, 'matching_index'] = filtered_indices
+
+        return group
+    def assign_matching_indices(group, ndays):
+        if len(group)<2:
+            group['matching_index'] = [[] for _ in range(len(group))]
+            return group
+        matching_indices = {}
+        for idx, row in group.iterrows():
+            matches = group[(group['Inv_Date'] - row['Inv_Date']).dt.days.abs() <= ndays]
+            if len(matches) > 1:
+                matching_indices[idx] = list(matches['Index_row'].values)
+            else:
+                matching_indices[idx] = []
+        group['matching_index'] = group.index.map(matching_indices)
+        return group
+    def remove_matching_chq_no(group):
+        group['matching_index'] = group['matching_index'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+
+        for idx, row in group.iterrows():
+            current_index = row['Index_row']
+            current_chq_no = row['Chq_No']
+
+            matching_indices = row['matching_index']
+
+            filtered_indices = [
+                match_idx
+                for match_idx in matching_indices
+                if group.loc[group['Index_row'] == match_idx, 'Chq_No'].iloc[0] != current_chq_no
+            ]
+
+            group.at[idx, 'matching_index'] = filtered_indices
+
+        return group
+    def filter_by_levenshtein_distance(group):
+        group['matching_index'] = group['matching_index'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+        for idx, row in group.iterrows():
+            current_index = row['Index_row']
+            current_invoice = row['Suppliers_Invoice_Number']
+
+            matching_indices = row['matching_index']
+
+            filtered_indices = [
+                match_idx
+                for match_idx in matching_indices
+                if Levenshtein.distance(current_invoice,
+                                         group.loc[group['Index_row'] == match_idx, 'Suppliers_Invoice_Number'].iloc[0]) <= 2
+            ]
+
+            group.at[idx, 'matching_index'] = filtered_indices
+
+        return group
+
+    def remove_matching_chq_no_new(df, group_key='Group_ID'):
+        df = df.copy()
+        df['matching_index'] = df['matching_index'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+        exploded = df[['Index_row', 'Chq_No', 'matching_index']].explode('matching_index')
+        exploded = exploded.merge(
+            df[['Index_row', 'Chq_No']].rename(columns={'Index_row': 'match_idx', 'Chq_No': 'match_Chq_No'}),
+            left_on='matching_index', right_on='match_idx', how='left')
+        exploded = exploded[exploded['Chq_No'] != exploded['match_Chq_No']]
+        filtered = (exploded.groupby('Index_row')['matching_index'].apply(list).reset_index())
+        df = df.drop(columns=['matching_index']).merge(filtered, on='Index_row', how='left')
+        df['matching_index'] = df['matching_index'].apply(lambda x: x if isinstance(x, list) else [])
+        return df
+
+    def process_date_and_assign_group_new(df, ndays, group_key):
+        df = df.sort_values([group_key, 'Inv_Date']).copy()
+        df['Date_Diff'] = df.groupby(group_key)['Inv_Date'].diff().dt.days.fillna(0).abs()
+        df['New_Flag'] = (df['Date_Diff'] > ndays).astype(int)
+        df['Local_Group'] = df.groupby(group_key)['New_Flag'].cumsum()
+        df['Group_ID'] = (df[group_key].astype('category').cat.codes * 10 ** 6 + df['Local_Group'])
+        return df
+    def assign_matching_indices_new(df, ndays, group_key='Group_ID'):
+        df = df.sort_values([group_key, 'Inv_Date']).copy()
+        df['Inv_Ordinal'] = df['Inv_Date'].map(lambda x: x.toordinal())
+        merged = df.merge(df, on=group_key, suffixes=('_left', '_right'))
+        merged = merged[(merged['Inv_Ordinal_left'] - merged['Inv_Ordinal_right']).abs() <= ndays]
+        merged = merged[merged['Index_row_left'] != merged['Index_row_right']]
+        matching = (merged.groupby('Index_row_left')['Index_row_right'].apply(list).reset_index().rename(
+            columns={'Index_row_left': 'Index_row'}))
+        df = df.merge(matching, on='Index_row', how='left')
+        df = df.rename(columns={'Index_row_right': 'matching_index'})
+        df['matching_index'] = df['matching_index'].apply(lambda x: x if isinstance(x, list) else [])
+        return df.drop(columns=['Inv_Ordinal'])
+
+
+
+
+
+    def getDataFromDatabase():
+        a = readEncryptedConfig(r'/home/ubuntu/anomaly_data_pipeline/Data_Engg_Data_Science_Pre_Prod/Anomaly/Config/Paths.xls', env_local)
+        user = a['user']
+        pwd = a['password']
+        password = urllib.parse.quote_plus(pwd)
+        ip = a['host']
+        schema = "l1_t0004_db"
+        engine = create_engine('mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(user, password, ip, schema))
+        query = "SELECT * FROM l1_t0004_db.temp_ap_inv"  #(source data)
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+        return df
+
+    combined = getDataFromDatabase()
+
+    print(combined['EXTENDED_AMOUNT'].unique())
+    target = ['seq_no' ,'Supplier_Invoice', 'Invoice_Number' ,'Company', 'Invoice_Status',
+     'Intercompany', 'Direct_Intercompany' ,'Supplier' ,'Supplier_ID',
+     'Default_Payment_Terms' ,'Default_Payment_Type' ,'Suppliers_Invoice_Number',
+     'Created_On' ,'Invoice_Date', 'Invoice_Received_Date',
+     'Invoice_Accounting_Date', 'Memo', 'Discount_Date' ,'Due_Date',
+     'Invoice_Amount', 'Invoice_Status1', 'Balance_Due' ,'Currency',
+     'Is_On_Hold____Blank__if_No_and__Yes__if_Yes', 'Adjustment',
+     'Adjustment_Reason' ,'Procurement_Related' ,'Purchase_Orders',
+     'External_PO_Number' , 'Invoice_Created_By' ,'Payment_Amount',
+     'Payment_Handling_Instruction', 'Supplier_Invoice_Reference_ID',
+     'Check_Number' ,'Cost_Center' ,'Location' ,'Site' ,'Line_Description',
+     'Approval_Date' ,'Payment_Type', 'Settlement_Run_Number', 'Is_On_Hold',
+     'Supplier_Document_Received', 'Quantity' ,'Unit_of_Measure' ,'Unit_Cost',
+     'Extended_Amount' ,'Document_Link' ,'Payment_Date',
+     'Document_Payment_Status', 'Payment_Status', 'Project' ,'Grant' ,'Gift',
+     'Line_Company', 'Payee_Alternate_Names', 'External_System_ID_Reference']
+    rename = ['SEQ_NO' ,'SUPPLIER_INVOICE' ,'INVOICE_NUMBER' ,'COMPANY' ,'INVOICE_STATUS',
+     'INTERCOMPANY' ,'DIRECT_INTERCOMPANY', 'SUPPLIER' ,'SUPPLIER_ID',
+     'DEFAULT_PAYMENT_TERMS' ,'DEFAULT_PAYMENT_TYPE' ,'SUPPLIERS_INVOICE_NUMBER',
+     'CREATED_ON', 'INVOICE_DATE' ,'INVOICE_RECEIVED_DATE',
+     'INVOICE_ACCOUNTING_DATE', 'MEMO' ,'DISCOUNT_DATE' ,'DUE_DATE',
+     'INVOICE_AMOUNT' ,'INVOICE_STATUS1' ,'BALANCE_DUE' ,'CURRENCY',
+     'IS_ON_HOLD_BLANK_IF_NO_AND_YES_IF_YES', 'ADJUSTMENT' ,'ADJUSTMENT_REASON',
+     'PROCUREMENT_RELATED' ,'PURCHASE_ORDERS', 'EXTERNAL_PO_NUMBER',
+     'INVOICE_CREATED_BY' ,'PAYMENT_AMOUNT', 'PAYMENT_HANDLING_INSTRUCTION',
+     'SUPPLIER_INVOICE_REFERENCE_ID', 'CHECK_NUMBER' ,'COST_CENTER' ,'LOCATION',
+     'SITE' ,'LINE_DESCRIPTION' ,'APPROVAL_DATE', 'PAYMENT_TYPE',
+     'SETTLEMENT_RUN_NUMBER', 'IS_ON_HOLD' ,'SUPPLIER_DOCUMENT_RECEIVED',
+     'QUANTITY' ,'UNIT_OF_MEASURE' ,'UNIT_COST', 'EXTENDED_AMOUNT',
+     'DOCUMENT_LINK' ,'PAYMENT_DATE' ,'DOCUMENT_PAYMENT_STATUS' ,'PAYMENT_STATUS',
+     'PROJECT', 'GRANT' ,'GIFT' ,'LINE_COMPANY' ,'PAYEE_ALTERNATE_NAMES',
+     'EXTERNAL_SYSTEM_ID_REFERENCE']
+    rename_dict = dict(zip(rename, target))
+    combined.rename(columns= lambda x: rename_dict[x] if x in rename_dict else x, inplace=True)
+    print(combined['Extended_Amount'].unique())
+    combined.columns
+
+    def getDataFromDatabase():
+        a = readEncryptedConfig(r'/home/ubuntu/anomaly_data_pipeline/Data_Engg_Data_Science_Pre_Prod/Anomaly/Config/Paths.xls', env_local)
+        user = a['user']
+        pwd = a['password']
+        password = urllib.parse.quote_plus(pwd)
+        ip = a['host']
+        schema = "l3_dm_db"
+        engine = create_engine('mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(user, password, ip, schema))
+        query = "SELECT * FROM l3_dm_db.dim_vendor"
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+        return df
+    vendor_name = getDataFromDatabase()
+
+    combined = combined.merge(vendor_name[['VENDOR_NAME','VENDOR_NAME_ALIAS']], left_on= 'Supplier', right_on = 'VENDOR_NAME', how='left')
+    combined.drop(columns=['VENDOR_NAME'], inplace=True)
+
+    combined = combined.reset_index(drop=False)
+    combined.rename(columns={'index': 'Index_row'}, inplace=True)
+    original_full_dataset_reserve_copy = combined.copy()
+    print(datetime.now().strftime("%H:%M:%S"))
+    rename_mapping = {
+        'Check_Number': 'Chq_No',
+        'Extended_Amount': 'Pay_Amount',
+        'Invoice_Date': 'Inv_Date',
+        'Invoice_Number': 'Inv_No',
+        'Line_Description': 'Item_Desc',
+        'Supplier': 'Supp_No',
+        "Inv_No_supplier": 'Suppliers_Invoice_Number',
+
+    }
+    combined = combined.rename(columns=rename_mapping)
+    print(combined.shape)
+    print(combined.columns)
+    
+    combined = combined[combined['Payment_Amount']>=0]
+    combined = combined[combined['Invoice_Amount']>=0]
+    combined = combined[combined['Pay_Amount']>=0]
+    
+    
+    
+    
+    
+    combined['Suppliers_Invoice_Number_Semen_Old_For_Recovery'] = combined['Suppliers_Invoice_Number']
+    
+    combined['Suppliers_Invoice_Number'] = (combined['Suppliers_Invoice_Number'].astype(str).apply(lambda x: ''.join(filter(str.isdigit, x)).lstrip('0') or '0'))
+    combined = combined.dropna(subset=['Payment_Amount', 'Invoice_Amount'])
+    #display(combined[['Payment_Amount', 'Invoice_Amount','Suppliers_Invoice_Number']])
+
+    combined['Inv_Date'] = pd.to_datetime(combined['Inv_Date'], format="mixed", errors = 'coerce')
+    combined=combined.dropna(subset=['Inv_Date'])
+    flag_check_number = 0
+    if len(combined) > 3 and combined['Chq_No'].nunique() <= 3:
+        flag_check_number = 1
+        combined['Chq_No_Old'] = combined['Chq_No']
+        combined['Chq_No'] = range(1, len(combined) + 1)
+    combined = combined.drop_duplicates(subset=['seq_no'])
+
+    print(f"WRONG DATES: {len(combined[combined['Inv_Date'].isna()])}")
+    print(combined.shape)
+    print(datetime.now().strftime("%H:%M:%S"))
+    combined_reserve_copy = combined.copy()
+    uploadOutput_temorary(combined_reserve_copy, 'random1')
+    gc.collect()
+    del combined_reserve_copy
+    del original_full_dataset_reserve_copy
+    global group_id_counter
+
+    print("original_rulebased")
+    original_rulebased = pd.DataFrame()
+    try:
+        df = getDataFromDatabase_temorary('random1')
+        df = df.dropna(subset=['Chq_No'])
+        df = df[df['Chq_No']!='']
+        print(df.shape)
+        df['Group_ID'] = (
+            df[['VENDOR_NAME_ALIAS', 'Pay_Amount', 'Invoice_Amount']]
+            .astype(str)
+            .agg('-'.join, axis=1)
+            .rank(method='dense').astype(int)
+        )
+        pair_id_counter = count(1)
+        group_id_counter = df['Group_ID'].max()+1
+        tqdm.pandas()
+        # ndays = 5
+        print("process_date_and_assign_group")
+        df = process_date_and_assign_group_new(df, ndays=5, group_key='Group_ID')
+        print("assign_matching_indices")
+        df = assign_matching_indices_new(df, ndays=5, group_key='Group_ID')
+        #df = df.drop(columns=['Date_Diff', 'New_Group'])
+        df['matching_index'] = df['matching_index'].apply(lambda x: str(x) if isinstance(x, list) else x)
+        df = df[df['matching_index'].apply(lambda x: (isinstance(x, list) and len(x) != 0) or (isinstance(x, str) and x.strip() != '[]'))]
+        print("remove_matching_chq_no")
+        df = remove_matching_chq_no_new(df, group_key='Group_ID')
+        df['matching_index'] = df['matching_index'].apply(lambda x: str(x) if isinstance(x, list) else x)
+        df = df[df['matching_index'].apply(lambda x: (isinstance(x, list) and len(x) != 0) or (isinstance(x, str) and x.strip() != '[]'))]
+        print("filter_by_levenshtein_distance")
+        df = df.groupby('Group_ID', group_keys=False).progress_apply(filter_by_levenshtein_distance)
+        df['matching_index'] = df['matching_index'].apply(lambda x: str(x) if isinstance(x, list) else x)
+        df = df[df['matching_index'].apply(lambda x: (isinstance(x, list) and len(x) != 0) or (isinstance(x, str) and x.strip() != '[]'))]
+        print("filter_by_numeric_difference")
+        df = df.groupby('Group_ID', group_keys=False).progress_apply(filter_by_numeric_difference)
+        df['matching_index'] = df['matching_index'].apply(lambda x: str(x) if isinstance(x, list) else x)
+        original_rulebased = df[df['matching_index'].apply(lambda x: (isinstance(x, list) and len(x) != 0) or (isinstance(x, str) and x.strip() != '[]'))]
+        if flag_check_number == 1:
+            original_rulebased['Chq_No'] = original_rulebased['Chq_No_Old']
+            original_rulebased = original_rulebased.drop(columns=['Chq_No_Old'])
+        print(datetime.now().strftime("%H:%M:%S"))
+        print(f"original_rulebased - {original_rulebased.shape}")
+    except Exception as e:
+        print(f"{e}")
+    gc.collect()
+    print("rulebased1")
+    print("Date issue - up to 31 days")
+    rulebased1 = pd.DataFrame()
+    try:
+        print(datetime.now().strftime("%H:%M:%S"))
+        df = getDataFromDatabase_temorary('random1')
+        df = df.dropna(subset=['Chq_No'])
+        df = df[df['Chq_No']!='']
+        pair_id_counter = count(1)
+        df['Group_ID'] = (
+            df[['VENDOR_NAME_ALIAS', 'Pay_Amount',  'Invoice_Amount', 'Default_Payment_Terms','Suppliers_Invoice_Number']]
+            .astype(str)
+            .agg('-'.join, axis=1)
+            .rank(method='dense').astype(int)
+        )
+
+        group_id_counter = df['Group_ID'].max()+1
+        tqdm.pandas()
+        ndays = 31
+
+        print("process_date_and_assign_group")
+        df = process_date_and_assign_group_new(df, ndays=31, group_key='Group_ID')
+        print("assign_matching_indices")
+        df = assign_matching_indices_new(df, ndays=31, group_key='Group_ID')
+        #df = df.drop(columns=['New_Group'])
+        df['matching_index'] = df['matching_index'].apply(lambda x: str(x) if isinstance(x, list) else x)
+        df = df[df['matching_index'].apply(lambda x: (isinstance(x, list) and len(x) != 0) or (isinstance(x, str) and x.strip() != '[]'))]
+        print("remove_matching_chq_no")
+        df = remove_matching_chq_no_new(df, group_key='Group_ID')
+        df['matching_index'] = df['matching_index'].apply(lambda x: str(x) if isinstance(x, list) else x)
+        rulebased1 = df[df['matching_index'].apply(lambda x: (isinstance(x, list) and len(x) != 0) or (isinstance(x, str) and x.strip() != '[]'))]
+        if flag_check_number == 1:
+            rulebased1['Chq_No'] = rulebased1['Chq_No_Old']
+            rulebased1 = rulebased1.drop(columns=['Chq_No_Old'])
+        print(datetime.now().strftime("%H:%M:%S"))
+        print(f"rulebased1 - {rulebased1.shape}")
+    except Exception as e:
+        print(f"{e}")
+    gc.collect()
+
+    print("Different VENDOR_ALIAS NAME")
+    print("rulebased2")
+    rulebased2 = pd.DataFrame()
+    try:
+        print(datetime.now().strftime("%H:%M:%S"))
+        df = getDataFromDatabase_temorary('random1')
+        df = df.dropna(subset=['Chq_No'])
+        df = df[df['Chq_No']!='']
+        pair_id_counter = count(1)
+
+        df['Group_ID'] = (
+            df[['Inv_Date','Pay_Amount', 'Quantity','Item_Desc', 'Purchase_Orders', 'Invoice_Amount', 'Suppliers_Invoice_Number']]
+            .astype(str)
+            .agg('-'.join, axis=1)
+            .rank(method='dense').astype(int)
+        )
+
+
+        group_id_counter = df['Group_ID'].max()+1
+        
+        print(f"Unique group_id is {df['Group_ID'].nunique()}")
+
+        ndays=0
+        print("process_date_and_assign_group")
+        df = process_date_and_assign_group_new(df, ndays=1, group_key='Group_ID')
+        print("assign_matching_indices")
+        ndays=1
+        df = assign_matching_indices_new(df, ndays=1, group_key='Group_ID')
+        df['matching_index'] = df['matching_index'].apply(lambda x: str(x) if isinstance(x, list) else x)
+        df = df[df['matching_index'].apply(lambda x: (isinstance(x, list) and len(x) != 0) or (isinstance(x, str) and x.strip() != '[]'))]
+        #df = df.drop(columns=['Date_Diff', 'New_Group'])
+        print("remove_matching_chq_no")
+        df = remove_matching_chq_no_new(df, group_key='Group_ID')
+        df['matching_index'] = df['matching_index'].apply(lambda x: str(x) if isinstance(x, list) else x)
+        rulebased2 = df[df['matching_index'].apply(lambda x: (isinstance(x, list) and len(x) != 0) or (isinstance(x, str) and x.strip() != '[]'))]
+        if flag_check_number == 1:
+            rulebased2['Chq_No'] = rulebased2['Chq_No_Old']
+            rulebased2 = rulebased2.drop(columns=['Chq_No_Old'])
+        print(f"rulebased2 - {rulebased2.shape}")
+        print(datetime.now().strftime("%H:%M:%S"))
+    except Exception as e:
+        print(f"{e}")
+
+    gc.collect()
+
+
+
+    def getDataFromDatabase_temorary(table_name):
+        a = readEncryptedConfig(r'/home/ubuntu/anomaly_data_pipeline/Data_Engg_Data_Science_Pre_Prod/Anomaly/Config/Paths.xls', env_local)
+        user = a['user']
+        pwd = a['password']
+        password = urllib.parse.quote_plus(pwd)
+        ip = a['host']
+        schema = "anomaly"
+        engine = create_engine('mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(user, password, ip, schema))
+        query = f"SELECT * FROM anomaly.{table_name}"
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+        return df
+    def removeDataFromDatabase_temorary(table_name):
+        a = readEncryptedConfig(r'/home/ubuntu/anomaly_data_pipeline/Data_Engg_Data_Science_Pre_Prod/Anomaly/Config/Paths.xls', env_local)
+        user = a['user']
+        pwd = a['password']
+        password = urllib.parse.quote_plus(pwd)
+        ip = a['host']
+        schema = "anomaly"
+        engine = create_engine('mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(user, password, ip, schema))
+        query = text(f"TRUNCATE TABLE anomaly.{table_name}")
+        with engine.connect() as conn:
+            conn.execute(query)
+    gc.collect()
+    def cleaned_matching_index(val):
+
+        cleaned = re.sub(r'np\.int64\((\d+)\)', r'\1', str(val))
+        return cleaned
+    
+    print("START_CLUSTERING")
+    def pairwise_clustering(df, index_col = 'Index_row', matching_col = 'matching_index',cluster_col = 'cluster_id' ):
+        df_result = df.copy()
+        def parse_matches(x):
+
+            return ast.literal_eval(x) if pd.notnull(x) else []
+        df_result[matching_col] = df_result[matching_col].apply(parse_matches)
+        G = nx.Graph()
+        all_indices = sorted(df_result[index_col].unique())
+        G.add_nodes_from(all_indices)
+
+        index_to_neighbors = {}
+        for i, row in df_result.iterrows():
+            current_idx = row[index_col]
+            neighbors = sorted(row[matching_col])
+            index_to_neighbors[current_idx] = neighbors
+        for node, neighbors in index_to_neighbors.items():
+            for nb in neighbors:
+                G.add_edge(node, nb)
+        global forced_pairs
+        forced_pairs = []
+
+        while True:
+            single_neighbor_nodes = sorted([n for n in G.nodes if G.degree(n) ==1])
+            if not single_neighbor_nodes:
+                break
+            single_neighbor_nodes.sort()
+            for node in single_neighbor_nodes:
+                if node in G:
+                    neighbor_list = list(G[node])
+                    if len(neighbor_list) ==1:
+                        partner = neighbor_list[0]
+                        forced_pairs.append(tuple(sorted((node,partner))))
+                        G.remove_node(node)
+                        if partner in G:
+                            G.remove_node(partner)
+        max_match = nx.max_weight_matching(G,maxcardinality = True)
+        matched_pairs = [tuple(sorted(list(edge))) for edge in max_match]
+        all_pairs = forced_pairs + matched_pairs
+        global cluster_id_map
+        cluster_id_map = {}
+        current_cluster_id = 1
+        for pair in sorted(all_pairs):
+            u, v = pair
+            cluster_id_map[u] = current_cluster_id
+            cluster_id_map[v] = current_cluster_id
+            current_cluster_id +=1
+        def get_cluster_id(row, idx):
+            return cluster_id_map.get(row_idx, None)
+        df_result[cluster_col] = df_result[index_col].apply(lambda x: cluster_id_map.get(x,None))
+        return df_result
+
+    try:
+        original_rulebased['cluster_id']=0
+        original_rulebased = pairwise_clustering(original_rulebased)
+        print(f"Unique clusters {original_rulebased['cluster_id'].nunique()}")
+    except Exception as e:
+        print(f"{e}")
+    try:
+        rulebased1['cluster_id']=0
+        rulebased1 = pairwise_clustering(rulebased1)
+        print(f"Unique clusters {rulebased1['cluster_id'].nunique()}")
+    except Exception as e:
+        print(f"{e}")
+    try:
+        rulebased2['cluster_id']=0
+        rulebased2 = pairwise_clustering(rulebased2)
+        print(f"Unique clusters {rulebased2['cluster_id'].nunique()}")
+    except Exception as e:
+        print(f"{e}")
+
+    print(f"Before merging files")
+
+
+    rulebased7 = pd.DataFrame()
+    print(original_rulebased.shape)
+    original_rulebased.rename(columns={'cluster_id': 'Original_rulebased_GroupID'}, inplace=True)
+    combined =  pd.concat([rulebased7, original_rulebased], ignore_index=True)
+
+    print(rulebased1.shape)
+    rulebased1.rename(columns={'cluster_id': 'Rulebased1__GroupID'}, inplace=True)
+    combined =  pd.concat([combined, rulebased1], ignore_index=True)
+
+    print(rulebased2.shape)
+    rulebased2.rename(columns={'cluster_id': 'Rulebased2_Group_ID'}, inplace=True)
+    combined =  pd.concat([combined, rulebased2], ignore_index=True)
+    rename_mapping = {
+        'Chq_No': 'Check_Number',
+        'Pay_Amount': 'Extended_Amount',
+        'Inv_Date': 'Invoice_Date',
+        'Inv_No': 'Invoice_Number',
+        'Item_Desc': 'Line_Description',
+        'Supp_No': 'Supplier',
+        "Suppliers_Invoice_Number": 'Supplier_Invoice_Number',
+        "Extended_Amount" : "Pay_Amount2"
+
+    }
+    combined = combined.rename(columns=rename_mapping)
+    
+  
+    
+        
+
+    print(f"step_1 - {combined.shape}")
+    global unique_values
+    unique_values = {}
+    global current_id
+    current_id = 1
+    def get_unique_id(value):
+        global current_id
+        if value not in unique_values:
+            unique_values[value] = current_id
+            current_id += 1
+        return unique_values[value]
+
+    potential_columns = ['Rulebased7_Group_ID', 'Original_rulebased_GroupID', 'Rulebased1__GroupID', 'Rulebased2_Group_ID']
+    columns = [col for col in potential_columns if col in combined.columns]
+    combined = combined.dropna(subset=columns, how='all')
+    print(f"step_2 - {combined.shape}")
+    combined['Matched_Record_Number'] = None
+    combined['Priority_to_Validate'] = None
+
+    for col in columns:
+        for index, row in tqdm(combined.iterrows(), total=len(combined)):
+            if pd.isna(combined.at[index, 'Matched_Record_Number']):
+                value = row[col]
+                if pd.notna(value):
+
+                    unique_id = get_unique_id(f"{col}_{value}") #
+                    group_indices = combined[combined[col]==value].index
+                    if all(pd.isna(combined.at[i, "Matched_Record_Number"]) for i in group_indices):
+                        for i in group_indices:
+                            combined.at[i, "Matched_Record_Number"]=unique_id
+                            combined.at[i, "Priority_to_Validate"]=col
+
+
+
+    print(f"Matched_Record_Number_unique - {combined['Matched_Record_Number'].nunique()}")
+    print(f"step_3 - {combined.shape}")
+    combined = combined.dropna(subset=['Matched_Record_Number'])
+    combined = combined.drop(columns=columns)
+    print(f"step_4 - {combined.shape}")
+    def remove_all_negative_scanrios(group):
+        if (group['Invoice_Amount'] < 0).any():
+            group.loc[:, 'Matched_Record_Number'] = None
+        return group
+    print(f"step_5 - {combined.shape}")
+    combined = combined.groupby('Matched_Record_Number', group_keys=False).progress_apply(remove_all_negative_scanrios)
+    print(f"step_6 - {combined.shape}")
+    combined = combined.dropna(subset=['Matched_Record_Number'])
+    print(f"After_Matched_Record_Number: {combined.shape}")
+
+    del flag_check_number
+    rename_mapping = {
+        'Chq_No': 'Check_Number',
+        'Pay_Amount': 'Extended_Amount',
+        'Inv_Date': 'Invoice_Date',
+        'Inv_No': 'Invoice_Number',
+        'Item_Desc': 'Line_Description',
+        'Supp_No': 'Supplier',
+        "Suppliers_Invoice_Number": 'Supplier_Invoice_Number',
+        "Extended_Amount" : "Pay_Amount2"
+
+    }
+    combined = combined.rename(columns=rename_mapping)    
+    combined['Extended Amount'] = combined['Pay_Amount2']
+    combined['Iteration']= np.nan
+    combined['Confirmed']="Y"
+    combined['Recovery_Logics']=np.nan
+    combined['Impact_Flag'] = combined.duplicated(subset=['Matched_Record_Number'], keep='first').astype(int).map({0:1, 1:0})
+    combined['ConfirmedSpend'] = np.where((combined['Confirmed']=="Y") & (combined['Impact_Flag']==1), combined['Pay_Amount2'], 0)
+    combined['confirmedSpendStatus'] = np.where((combined['Confirmed']=="Y") & (combined['Impact_Flag']==1) & (combined['Pay_Amount2']>0), "Confirmed amounts", "Duplicate to Confirmed amounts")
+    combined['Invoice_Date'] = pd.to_datetime(combined['Invoice_Date'], format="mixed", errors = 'coerce')
+    combined['MonthShort'] = combined['Invoice_Date'].dt.strftime('%b').str[0]
+    combined['MonthNo']=combined['Invoice_Date'].dt.month
+    combined['Year']=combined['Invoice_Date'].dt.year
+    combined = combined.sort_values(by = 'Pay_Amount2')
+    tot = combined['Pay_Amount2'].sum()
+    combined['cums'] = combined['Pay_Amount2'].cumsum()
+    combined['bucket_flag'] = combined.apply(lambda row: "Bucket_1" if row['cums'] <= tot*0.1
+                                            else "Bucket_2" if row['cums'] <= tot*0.4
+                                            else "Bucket_3", axis=1)
+    combined.drop(columns=['cums'], inplace = True)
+    combined['Created_On'] = pd.to_datetime(combined['Created_On'], format="mixed", errors = 'coerce')
+    combined['Supplier_Invoice_Number'] = combined['Suppliers_Invoice_Number_Semen_Old_For_Recovery']
+    combined = combined.drop(['Suppliers_Invoice_Number_Semen_Old_For_Recovery'], axis=1)
+    user_name = "semenk"
+    combined['user_name'] = user_name
+    execution_id = 1
+    combined['execution_id'] = execution_id
+    #combined['file_name'] = file_name
+    combined['Reason_Grouped']= "ML1.1"
+    #combined['Impact_Flag'] = (combined['Pay_Amount2']==combined['Invoice_Amount']).astype(int)
+    print(f"Before_final_step: {combined.shape}")
+    def getDataFromDatabase():
+        a = readEncryptedConfig(r'/home/ubuntu/anomaly_data_pipeline/Data_Engg_Data_Science_Pre_Prod/Anomaly/Config/Paths.xls', env_local)
+        user = a['user']
+        pwd = a['password']
+        password = urllib.parse.quote_plus(pwd)
+        ip = a['host']
+        schema = "anomaly"
+        engine = create_engine('mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(user, password, ip, schema))
+        query = "SELECT * FROM anomaly.duplicate_ap_invoice"
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+        return df
+    combined1 = getDataFromDatabase()
+    if len(combined1)> 0:
+        lastd = combined1['Matched_Record_Number'].max()
+    else:
+        lastd = 0
+    if pd.isna(lastd):
+        lastd = 0
+    combined['Matched_Record_Number'] = combined['Matched_Record_Number'] + lastd
+    columns_df1 = set(combined.columns)
+    columns_df2 = set(combined1.columns)
+    common_columns = columns_df1.intersection(columns_df2)
+    print("Common")
+    print(len(common_columns))
+    print(common_columns)
+    print("Unique in the processed data")
+    unique_to_file1 = list(columns_df1 - columns_df2)
+    print(len(unique_to_file1))
+    print(unique_to_file1)
+    print("Unique in output table in SQL")
+    unique_to_file2 = list(columns_df2 - columns_df1)
+    print(len(unique_to_file2))
+    print(unique_to_file2)
+    for a in unique_to_file2:
+        combined[a] = None
+    print(f"Before last step: {combined.shape}")
+    combined = combined[combined1.columns]
+    print(datetime.now().strftime("%H:%M:%S"))
+    print(combined.shape)
+    def uploadOutput(output):
+        a = readEncryptedConfig(r'/home/ubuntu/anomaly_data_pipeline/Data_Engg_Data_Science_Pre_Prod/Anomaly/Config/Paths.xls', env_local)
+        user = a['user']
+        pwd = a['password']
+        password = urllib.parse.quote_plus(pwd)
+        ip = a['host']
+        schema = "anomaly"
+        engine = create_engine('mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(user, password, ip, schema))
+        table_name ='duplicate_ap_invoice'
+        output.to_sql(table_name, con = engine, if_exists='append', index=False)
+
+    uploadOutput(combined)
+
+
+
+# In[7]:
+
+
+def main():
+    ML1()
+    return
+
+
+
+
+if __name__ == "__main__":
+
+    main()
+    exit()
+
+
