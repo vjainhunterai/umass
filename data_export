@@ -18,7 +18,8 @@ DB_PASS = "your_password"
 SSL_CA = None  # e.g. "/path/to/rds-combined-ca-bundle.pem"
 
 OUTPUT_FILE = "export_output.txt"
-DELIMITER = "\t"  # tab-delimited; change to "|" or "," if needed
+DELIMITER = "|"  # pipe-delimited to avoid clashes with commas in data
+FLOAT_PRECISION = 2  # round floats to 2 decimal places
 CHUNK_SIZE = 50000  # rows per chunk — tune based on your RAM
 
 # ============================================================
@@ -46,6 +47,8 @@ def main():
 
     print(f"Connecting to {DB_HOST}:{DB_PORT}/{DB_NAME} ...")
 
+    import csv
+
     # --- Stream chunks directly to txt file (no full df in memory) ---
     row_count = 0
     with engine.connect() as conn:
@@ -53,7 +56,23 @@ def main():
         with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
             first_chunk = True
             for chunk in pd.read_sql(text(SQL), conn, chunksize=CHUNK_SIZE):
-                chunk.to_csv(f, sep=DELIMITER, index=False, header=first_chunk)
+                # Fix floating point precision (e.g. 18315.219999999983 → 18315.22)
+                float_cols = chunk.select_dtypes(include=["float"]).columns
+                chunk[float_cols] = chunk[float_cols].round(FLOAT_PRECISION)
+
+                # Strip newlines/carriage returns from string fields
+                str_cols = chunk.select_dtypes(include=["object"]).columns
+                chunk[str_cols] = chunk[str_cols].apply(
+                    lambda col: col.str.replace(r"[\r\n]+", " ", regex=True)
+                )
+
+                chunk.to_csv(
+                    f,
+                    sep=DELIMITER,
+                    index=False,
+                    header=first_chunk,
+                    quoting=csv.QUOTE_MINIMAL,
+                )
                 first_chunk = False
                 row_count += len(chunk)
                 print(f"  Written {row_count} rows ...")
