@@ -1,0 +1,29 @@
+Default_Payment_Terms
+.5% 10, Net 30
+1% 10, Net 30
+1% 15, Net 30
+1% 20, Net 30
+1% 25, Net 60
+2% 10, Net 10
+2% 10, Net 15
+2% 10, Net 30
+2% 15, Net 30
+2% 15, Net 45
+2% 20, Net 45
+2% 30, Net 31
+2% 30, Net 45
+2% 30, Net 60
+2% 60, Net 61
+2% 75, Net 76
+5% 10, Net 30
+Immediate
+Net 10
+Net 15
+Net 20
+Net 25
+Net 30
+Net 40
+Net 45
+Net 60
+Net 75
+Net 90
