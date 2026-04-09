@@ -1,3 +1,20 @@
+UPDATE your_table
+SET description = REGEXP_REPLACE(
+    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(description, 
+        '\r\n', ' '), 
+        '\r', ' '), 
+        '\n', ' '), 
+        '\t', ' '), 
+        UNHEX('C2A0'), ' '),
+    ' {2,}',
+    ' '
+);
+
+
+======
+
+
+
 SELECT id, description
 FROM your_table
 WHERE description LIKE '%\n%'
