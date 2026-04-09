@@ -1,3 +1,23 @@
+SELECT id, description
+FROM your_table
+WHERE description LIKE '%\n%'
+   OR description LIKE '%\r%';
+
+
+SELECT id, description
+FROM your_table
+WHERE description REGEXP '  ';
+
+
+SELECT id, description
+FROM your_table
+WHERE description LIKE '%\n%'
+   OR description LIKE '%\r%'
+   OR description REGEXP '  ';
+
+
+
+==================
 SELECT id, description, 
     REGEXP_REPLACE(
         REPLACE(REPLACE(description, '\r\n', ' '), '\n', ' '),
