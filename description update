@@ -1,3 +1,26 @@
+-- Step 1: Preview the conversion
+SELECT 
+    extended_amount,
+    CASE 
+        WHEN extended_amount LIKE '(%' 
+        THEN -1 * CAST(REPLACE(REPLACE(REPLACE(extended_amount, '(', ''), ')', ''), ',', '') AS DECIMAL(15,2))
+        ELSE CAST(REPLACE(extended_amount, ',', '') AS DECIMAL(15,2))
+    END AS cleaned_amount
+FROM your_table
+LIMIT 20;
+
+-- Step 2: Once verified, run the update
+UPDATE your_table
+SET extended_amount = 
+    CASE 
+        WHEN extended_amount LIKE '(%' 
+        THEN -1 * CAST(REPLACE(REPLACE(REPLACE(extended_amount, '(', ''), ')', ''), ',', '') AS DECIMAL(15,2))
+        ELSE CAST(REPLACE(extended_amount, ',', '') AS DECIMAL(15,2))
+    END;
+
+
+
+==========================
 UPDATE your_table
 SET description = REGEXP_REPLACE(
     REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(description, 
