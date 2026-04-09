@@ -1,0 +1,20 @@
+SELECT id, description, 
+    REGEXP_REPLACE(
+        REPLACE(REPLACE(description, '\r\n', ' '), '\n', ' '),
+        ' {2,}',
+        ' '
+    ) AS cleaned_description
+FROM your_table
+LIMIT 20;
+
+
+
+=====
+
+
+UPDATE your_table
+SET description = REGEXP_REPLACE(
+    REPLACE(REPLACE(description, '\r\n', ' '), '\n', ' '),
+    ' {2,}',
+    ' '
+);
