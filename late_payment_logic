@@ -1,3 +1,8 @@
+COALESCE(
+    cast(DUE_DATE as date),
+    DATE_ADD(cast(INVOICE_DATE as date), INTERVAL b.Net_Payment_terms DAY)
+) AS Effective_Due_Date
+
 
 
 
