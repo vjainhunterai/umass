@@ -1,0 +1,162 @@
+
+
+
+
+insert into late_payments.fact_late_payment
+SELECT 
+
+c.VENDOR_NAME_ALIAS,
+a.Extended_Amount,
+a.Invoice_Number,
+a.Suppliers_Invoice_Number,
+a.Document_Payment_Status,
+Payment_Date,
+ Due_Date,
+cast( INVOICE_DATE  as date)   as Invoice_Date,
+coalesce(b.Net_Payment_terms , a.Default_Payment_Terms) as Default_Payment_Days,
+coalesce(b.Net_Payment_terms, 'NA')   as Default_Payment_Terms_deduped,
+e.`Benchmarks_Within _System`,
+e.Benchmarks_Most_Common_across_Systems ,
+e.Benchmarks_Exclusive_Best_in_Class ,
+CASE 
+    WHEN PAYMENT_DATE   IS NOT NULL AND  DUE_DATE IS NOT NULL THEN 
+        DATEDIFF(PAYMENT_DATE,  DUE_DATE  )
+    ELSE 
+        0
+END AS Number_of_Days_Overdue_cleaned,
+CASE 
+    WHEN PAYMENT_DATE    IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND  DUE_DATE   IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) ,  DUE_DATE  )
+    ELSE 
+        0
+END AS Number_of_Days_Overdue_initial,
+CASE 
+    WHEN Document_Payment_Status = 'Unpaid' THEN 'Unpaid'
+    WHEN l1_t0004_db.fn_parse_any_date( DUE_DATE )  IS NULL THEN 'No data'
+    WHEN cast( PAYMENT_DATE  as date)  < cast( INVOICE_DATE  as date)  THEN 'Need to be Validated'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END > 365 THEN 'Need to be Validated'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END > 0 THEN 'Late Payment'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END >= -60 THEN 'Paid on time'
+    
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END < -60 THEN 'Paid more than 60 days before Due date'
+    ELSE 'Other'
+END AS Late_Payment_Flag ,
+
+
+CASE 
+    WHEN CASE 
+    WHEN Document_Payment_Status = 'Unpaid' THEN 'Unpaid'
+    WHEN cast( DUE_DATE  as date)  IS NULL THEN 'No data'
+    WHEN cast( PAYMENT_DATE  as date)  < cast( INVOICE_DATE  as date)  THEN 'Need to be Validated'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END > 365 THEN 'Need to be Validated'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END > 0 THEN 'Late Payment'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END >= -60 THEN 'Paid on time'
+    
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END < -60 THEN 'Paid more than 60 days before Due date'
+    ELSE 'Other'
+END = 'Unpaid' OR 
+    
+    
+    CASE 
+    WHEN Document_Payment_Status = 'Unpaid' THEN 'Unpaid'
+    WHEN cast( DUE_DATE  as date)  IS NULL THEN 'No data'
+    WHEN cast( PAYMENT_DATE  as date)  < cast( INVOICE_DATE  as date)  THEN 'Need to be Validated'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END > 365 THEN 'Need to be Validated'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END > 0 THEN 'Late Payment'
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND b.Net_Payment_terms IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( INVOICE_DATE  as date) ) - b.Net_Payment_terms
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END >= -60 THEN 'Paid on time'
+    
+    WHEN CASE 
+    WHEN cast( PAYMENT_DATE  as date)  IS NOT NULL AND cast( DUE_DATE  as date)  IS NOT NULL THEN 
+        DATEDIFF(cast( PAYMENT_DATE  as date) , cast( DUE_DATE  as date) )
+    ELSE 
+        0
+END < -60 THEN 'Paid more than 60 days before Due date'
+    ELSE 'Other'
+END = 'Need to be Validated' THEN NULL
+    ELSE DATEDIFF(cast( PAYMENT_DATE  as date)  , cast( INVOICE_DATE  as date) )
+END AS Actual_Payment_Days,
+6681  as Party_Group_Key ,
+c.VENDOR_GROUP_KEY  as vendor_group_key
+
+FROM l1_t0004_db.temp_ap_inv_umass  a
+left join late_payments.dim_payment_terms  b
+on trim(a.Default_Payment_Terms) = trim(b.HCO_PYMNT_TRMS_DESC)
+left join l3_dm_db.dim_vendor c
+on a.Supplier = c.VENDOR_NAME
+left join late_payments.dim_benchmark_data  e
+on   c.VENDOR_NAME_ALIAS = e.Supplier
