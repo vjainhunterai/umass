@@ -1,0 +1,50 @@
+
+
+select 
+b.PARTY_GROUP_NAME   as System_Name,
+b.PARTY_GROUP_NAME_ALIAS  as System_Code,
+a.VENDOR_NAME  as Vendor_Name,
+a.VENDOR_NAME_ALIAS  as Vendor_Name_Dedup,
+a.VAR_VERIFIED_FLAG   as VAR_Flag,
+a.VIZIENT_SUPPLIER_FLAG  as Contract_Flag,
+e.SLU_DESCRIPTION  as hunterAI_ID,
+a.INVC_ITEM_DESCRIPTION  as Item,
+a.INVOICE_NUMBER   as Invoice_Number,
+a.INVC_START_DT  as Invoice_Date,
+a.PO_NUMBER  as PO_Number,
+a.INVC_ISSUE_DT   as PO_Date,
+a.INVC_LINE_VALUE  as Invoice_Spend,
+a.INVC_LINE_QUANTITY_DERIVED  as Invoice_Qty_Derived,
+a.INVC_PRICING_PER_PRD  as PO_Price,
+a.INVC_LINE_QUANTITY  as PO_Qty,
+prd.PRD_SEGMENT   as  SEGMENT,
+prd.PRD_FAMILY  as  FAMILY,
+prd.PRD_CLASS  as  CLASS,
+prd.PRD_COMMODITY  as  COMMODITY,
+case when a.PRD_KEY <> 25340 then e.SLU_FIELD4 else null end as Model_no ,
+oem.OEM_NAME as OEM ,
+coalesce(concat(year(a.INVC_START_DT ),lpad(month(a.INVC_START_DT ),2,0) ),999999) as mnth_key,
+concat(b.PARTY_GROUP_NAME,a.VENDOR_NAME_ALIAS,e.SLU_DESCRIPTION,coalesce(concat(year(a.INVC_START_DT ),lpad(month(a.INVC_START_DT ),2,0) ),999999),"SYSTEM")  as Match_Key_Min_Price_within_System,
+concat(b.PARTY_GROUP_NAME,a.VENDOR_NAME_ALIAS,e.SLU_DESCRIPTION,coalesce(concat(year(a.INVC_START_DT ),lpad(month(a.INVC_START_DT ),2,0) ),999999),"PRODUCT")  as Match_Key_Min_Price_across_System
+
+
+
+
+
+from (
+select a.*,b.VENDOR_NAME,
+b.VENDOR_NAME_ALIAS,
+b.VAR_VERIFIED_FLAG,
+b.VIZIENT_SUPPLIER_FLAG
+from ( select * from l3_dm_db.fact_invoice_details_umass  
+)   a
+inner join ( select * from  l3_dm_db.dim_vendor where IT_SUPPLIER_FLAG= 1) b
+on a.vendor_key = b.vendor_key ) a
+left join l3_dm_db.dim_party_group b
+on a.PARTY_GROUP_KEY = b.PARTY_GROUP_KEY
+left join l3_dm_db.dim_prd prd
+on a.PRD_KEY = prd.PRD_KEY
+left join l3_dm_db.dim_slu e
+on a.INVC_SLU_PROD = e.SLU_PRODUCT
+left join l3_dm_db.dim_oem oem
+on a.oem_key = oem.oem_key 
