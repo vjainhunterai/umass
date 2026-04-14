@@ -1,0 +1,292 @@
+"
+
+select 
+a.invSluType   as Benchmarking_Context,
+a.invNameCustomer  as System_Name,
+b.PARTY_GROUP_NAME_ALIAS  as System_Code,
+coalesce(d.VENDOR_NAME_ALIAS,f.vendor_name)  as Vendor_Name_Dedup ,
+coalesce(d.VAR_VERIFIED_FLAG,f.VAR_VERIFIED_FLAG,0) as var_flag,
+coalesce(d.VIZIENT_SUPPLIER_FLAG,f.VIZIENT_SUPPLIER_FLAG,0)  as contract_flag,
+coalesce(d.IT_SUPPLIER_FLAG,f.IT_SUPPLIER_FLAG,0)  as IT_Suppliers_Flag,
+a.invDescription_System  as hunterAI_ID,
+c.PRD_SEGMENT  as SEGMENT_Name,
+c.PRD_FAMILY  as FAMILY_Name,
+c.PRD_CLASS  as CLASS_Name,
+c.PRD_COMMODITY  as Commodity_Name,
+a.invminSystemUnitPriceOfGroup   as Min_Price,
+a.invmaxSystemUnitPriceOfGroup   as Max_Price,
+a.invflagOutlier_System  as Flag_Outlier,
+a.`derived_savings`  as Price_Cost_Avoidance,
+a.`invTotInvAmount_System`  as Invoice_Spend,
+a.`invQtyDerivedSystem`  as Invoice_QTY_Dervided,
+a.MNTH_YEAR  as MNTH_YEAR,
+case when c.PRD_KEY <> 25340 then e.Field4 else null end as Model_no ,
+'Unknown' as OEM,
+concat(b.PARTY_GROUP_NAME,d.VENDOR_NAME_ALIAS,a.invDescription_System,a.MNTH_YEAR) as Match_Key_Min_Price_Universal
+
+
+ from ( 
+select a.* ,
+(invQtyDerivedSystem*invminSystemUnitPriceOfGroup) -invTotInvAmount_System   as derived_savings
+from (
+select 
+invSluSystem,
+invNameCustomer,
+invSegmentLevel4,
+invCcCode,
+concat(year(invCreationDate),lpad(month(invCreationDate) ,2,0 ))  as MNTH_YEAR,
+min(invminSystemUnitPriceOfGroup)  as invminSystemUnitPriceOfGroup,
+max(invmaxSystemUnitPriceOfGroup)  as invmaxSystemUnitPriceOfGroup,
+invflagOutlier_System,
+invpricVendorNameDedup
+,sum(`invQtyDerivedSystem`)  as invQtyDerivedSystem
+,sum(`invTotInvAmount_System`)  as invTotInvAmount_System
+,sum(invSavingsSystem)  as invSavingsSystem
+,invSluType
+,invSluProduct
+,invDescription_System
+
+from l2_cdm_db.savings_by_system_product 
+where  
+
+invSegmentLevel4
+in 
+(
+'TABLET',
+'PRINTER',
+'LAPTOP',
+'WORKSTATION',
+'DESKTOP'
+)
+and  invSluSystem is not null  
+and  invSluSystem <> ''
+and invSluType = 'System'
+group by
+invSluSystem,
+invNameCustomer,
+invSegmentLevel4,
+invpricVendorNameDedup,
+invCcCode,
+concat(year(invCreationDate),lpad(month(invCreationDate) ,2,0 )),
+invflagOutlier_System,
+invpricVendorNameDedup
+,invSluType
+,invSluProduct 
+,invDescription_System) a ) a
+left join l3_dm_db.dim_party_group b
+on a.invNameCustomer = b.PARTY_GROUP_NAME
+left join l3_dm_db.dim_prd c
+on  upper(a.invSegmentLevel4)  = upper(c.PRD_SEGMENT_LEVEL_4)
+
+left join ( select distinct VENDOR_GROUP_KEY,
+VENDOR_NAME_ALIAS,VAR_VERIFIED_FLAG,VIZIENT_SUPPLIER_FLAG,
+IT_SUPPLIER_FLAG  from l3_dm_db.dim_vendor)  d
+on a.invpricVendorNameDedup = d.VENDOR_NAME_ALIAS
+left join l3_dm_db.dim_vendor  f
+on a.invpricVendorNameDedup = f.vendor_name
+left join l2_cdm_db.l2_invoice_detail_slu_v1 e
+on a.invSluProduct = e.invpricSluProduct
+
+
+
+
+
+union all
+
+
+
+select 
+a.invSluType   as Benchmarking_Context,
+a.invNameCustomer  as System_Name,
+b.PARTY_GROUP_NAME_ALIAS  as System_Code,
+coalesce(d.VENDOR_NAME_ALIAS,f.vendor_name)  as Vendor_Name_Dedup ,
+coalesce(d.VAR_VERIFIED_FLAG,f.VAR_VERIFIED_FLAG,0) as var_flag,
+coalesce(d.VIZIENT_SUPPLIER_FLAG,f.VIZIENT_SUPPLIER_FLAG,0)  as contract_flag,
+coalesce(d.IT_SUPPLIER_FLAG,f.IT_SUPPLIER_FLAG,0)  as IT_Suppliers_Flag,
+a.invDescription_System  as hunterAI_ID,
+c.PRD_SEGMENT  as SEGMENT_Name,
+c.PRD_FAMILY  as FAMILY_Name,
+c.PRD_CLASS  as CLASS_Name,
+c.PRD_COMMODITY  as Commodity_Name,
+a.invminSystemUnitPriceOfGroup   as Min_Price,
+a.invmaxSystemUnitPriceOfGroup   as Max_Price,
+a.invflagOutlier_System  as Flag_Outlier,
+a.`derived_savings`  as Price_Cost_Avoidance,
+a.`invTotInvAmount_System`  as Invoice_Spend,
+a.`invQtyDerivedSystem`  as Invoice_QTY_Dervided,
+a.MNTH_YEAR  as MNTH_YEAR,
+case when c.PRD_KEY <> 25340 then e.Field4 else null end as Model_no ,
+'Unknown' as OEM,
+concat(b.PARTY_GROUP_NAME,d.VENDOR_NAME_ALIAS,a.invDescription_System,a.MNTH_YEAR) as Match_Key_Min_Price_Universal
+
+
+ from ( 
+select a.* ,
+(invQtyDerivedSystem*invminSystemUnitPriceOfGroup) -invTotInvAmount_System   as derived_savings
+from (
+select 
+invSluProduct,
+invNameCustomer,
+invSegmentLevel4,
+invCcCode,
+concat(year(invCreationDate),lpad(month(invCreationDate) ,2,0 )) as MNTH_YEAR,
+min(invminProductUnitPriceOfGroup)  as invminSystemUnitPriceOfGroup,
+max(invmaxProductUnitPriceOfGroup)  as invmaxSystemUnitPriceOfGroup,
+invflagOutlier_Product   as invflagOutlier_System,
+invpricVendorNameDedup  as invpricVendorNameDedup
+,sum(`invQtyDerivedProduct`)  as invQtyDerivedSystem
+,sum(`invTotInvAmount_Product`)  as invTotInvAmount_System
+,sum(invSavingsProduct)  as invSavingsSystem
+,invSluType
+,invDescription_Product as invDescription_System
+
+from l2_cdm_db.savings_by_system_product 
+where 
+
+invSegmentLevel4
+in 
+(
+'TABLET',
+'PRINTER',
+'LAPTOP',
+'WORKSTATION',
+'DESKTOP'
+)
+and  invSluProduct is not null  
+and  invSluProduct <> ''
+and invSluType = 'Product'
+group by
+invSluProduct,
+invNameCustomer,
+invSegmentLevel4,
+invpricVendorNameDedup,
+invCcCode,
+concat(year(invCreationDate),lpad(month(invCreationDate) ,2,0 )),
+invflagOutlier_System,
+invpricVendorNameDedup
+,invSluType
+,invDescription_System) a ) a
+left join l3_dm_db.dim_party_group b
+on a.invNameCustomer = b.PARTY_GROUP_NAME
+left join l3_dm_db.dim_prd c
+on  upper(a.invSegmentLevel4)  = upper(c.PRD_SEGMENT_LEVEL_4)
+
+left join ( select distinct VENDOR_GROUP_KEY,
+VENDOR_NAME_ALIAS,VAR_VERIFIED_FLAG,VIZIENT_SUPPLIER_FLAG,
+IT_SUPPLIER_FLAG  from l3_dm_db.dim_vendor)  d
+on a.invpricVendorNameDedup = d.VENDOR_NAME_ALIAS
+left join l3_dm_db.dim_vendor  f
+on a.invpricVendorNameDedup = f.vendor_name
+left join l2_cdm_db.l2_invoice_detail_slu_v1 e
+on a.invSluProduct = e.invpricSluProduct
+
+
+
+
+
+
+
+
+union all
+
+
+
+
+select 
+a.invSluType   as Benchmarking_Context,
+a.invNameCustomer  as System_Name,
+b.PARTY_GROUP_NAME_ALIAS  as System_Code,
+coalesce(d.VENDOR_NAME_ALIAS,f.vendor_name)  as Vendor_Name_Dedup ,
+coalesce(d.VAR_VERIFIED_FLAG,f.VAR_VERIFIED_FLAG,0) as var_flag,
+coalesce(d.VIZIENT_SUPPLIER_FLAG,f.VIZIENT_SUPPLIER_FLAG,0)  as contract_flag,
+coalesce(d.IT_SUPPLIER_FLAG,f.IT_SUPPLIER_FLAG,0)  as IT_Suppliers_Flag,
+a.invDescription_System  as hunterAI_ID,
+c.PRD_SEGMENT  as SEGMENT_Name,
+c.PRD_FAMILY  as FAMILY_Name,
+c.PRD_CLASS  as CLASS_Name,
+c.PRD_COMMODITY  as Commodity_Name,
+a.invminSystemUnitPriceOfGroup   as Min_Price,
+a.invmaxSystemUnitPriceOfGroup   as Max_Price,
+a.invflagOutlier_System  as Flag_Outlier,
+a.`derived_savings`  as Price_Cost_Avoidance,
+a.`invTotInvAmount_System`  as Invoice_Spend,
+a.`invQtyDerivedSystem`  as Invoice_QTY_Dervided,
+a.MNTH_YEAR  as MNTH_YEAR,
+case when c.PRD_KEY <> 25340 then e.Field4 else null end as Model_no ,
+'Unknown' as OEM,
+concat(b.PARTY_GROUP_NAME,d.VENDOR_NAME_ALIAS,a.invDescription_System,a.MNTH_YEAR) as Match_Key_Min_Price_Universal
+
+
+ from ( 
+select a.* ,
+(invQtyDerivedSystem*invminSystemUnitPriceOfGroup) -invTotInvAmount_System   as derived_savings
+from (
+select 
+invSluAbg   as invSluSystem,
+invNameCustomer,
+invSegmentLevel4,
+invCcCode,
+concat(year(invCreationDate),lpad(month(invCreationDate) ,2,0 ))  as MNTH_YEAR,
+min(invminAbgUnitPriceOfGroup)  as invminSystemUnitPriceOfGroup,
+max(invmaxAbgUnitPriceOfGroup)  as invmaxSystemUnitPriceOfGroup,
+invflagOutlier_Abg   as invflagOutlier_System,
+invpricVendorNameDedup
+,sum(`invQtyDerivedAbg`)  as invQtyDerivedSystem
+,sum(`invTotInvAmount_Abg`)  as invTotInvAmount_System
+,sum(invSavingsAbg)  as invSavingsSystem
+,invSluType
+,invSluProduct
+,invDescription_Abg  as invDescription_System
+
+from l2_cdm_db.savings_by_system_product 
+where 
+
+invSegmentLevel4
+in 
+(
+'TABLET',
+'PRINTER',
+'LAPTOP',
+'WORKSTATION',
+'DESKTOP'
+)
+and  invSluAbg is not null  
+and  invSluAbg <> ''
+and invSluType = 'Abg'
+group by
+invSluSystem,
+invNameCustomer,
+invSegmentLevel4,
+invpricVendorNameDedup,
+invCcCode,
+concat(year(invCreationDate),lpad(month(invCreationDate) ,2,0 )),
+invflagOutlier_System,
+invpricVendorNameDedup
+,invSluType
+,invSluProduct 
+,invDescription_System) a ) a
+left join l3_dm_db.dim_party_group b
+on a.invNameCustomer = b.PARTY_GROUP_NAME
+left join 
+ l3_dm_db.dim_prd c
+on  upper(a.invSegmentLevel4)  = upper(c.PRD_SEGMENT_LEVEL_4)
+
+left join ( select distinct VENDOR_GROUP_KEY,
+VENDOR_NAME_ALIAS,VAR_VERIFIED_FLAG,VIZIENT_SUPPLIER_FLAG,
+IT_SUPPLIER_FLAG  from l3_dm_db.dim_vendor)  d
+on a.invpricVendorNameDedup = d.VENDOR_NAME_ALIAS
+left join l3_dm_db.dim_vendor  f
+on a.invpricVendorNameDedup = f.vendor_name
+left join l2_cdm_db.l2_invoice_detail_slu_v1 e
+on a.invSluProduct = e.invpricSluProduct
+
+
+
+
+
+
+
+
+
+
+"
